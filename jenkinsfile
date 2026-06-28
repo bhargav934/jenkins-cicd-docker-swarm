@@ -1,0 +1,75 @@
+```groovy
+pipeline {
+    agent {
+        node {
+            label 'docker-node'
+        }
+    }
+
+    tools {
+        maven 'mymaven'
+    }
+
+    stages {
+
+        stage('Source Code Checkout') {
+            steps {
+                git 'https://github.com/bhargav934/dockerwebapp.git'
+            }
+        }
+
+        stage('Code Quality Analysis') {
+            steps {
+                withSonarQubeEnv('mysonar') {
+                    sh 'mvn clean verify sonar:sonar -Dsonar.projectKey=docker-node'
+                }
+            }
+        }
+
+        stage('Maven Build') {
+            steps {
+                sh 'mvn clean package'
+                sh 'cp -r target Docker-app'
+            }
+        }
+
+        stage('Docker Image Build') {
+            steps {
+                sh 'docker build -t appimage Docker-app'
+                sh 'docker build -t dbimage Docker-db'
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh 'trivy image appimage'
+                sh 'trivy image dbimage'
+            }
+        }
+
+        stage('Docker Image Tag') {
+            steps {
+                sh 'docker tag appimage bhargavchandra/mynewapp:appimage'
+                sh 'docker tag dbimage bhargavchandra/mynewapp:dbimage'
+            }
+        }
+
+        stage('Docker Image Push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'dockerhub') {
+                        sh 'docker push bhargavchandra/mynewapp:appimage'
+                        sh 'docker push bhargavchandra/mynewapp:dbimage'
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Docker Swarm') {
+            steps {
+                sh 'docker stack deploy dockerstack --compose-file=compose.yml'
+            }
+        }
+    }
+}
+```
